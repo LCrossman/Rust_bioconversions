@@ -20,3 +20,10 @@ use std::convert::AsRef;
 use std::path::Path;
 use std::process;
 use anyhow::Context;
+
+for gbk2ffn.rs also require:
+use std::collections::BTreeMap;
+
+for gbk2faa.rs you require:
+use std::collections::BTreeMap;
+use protein_translate::translate;
