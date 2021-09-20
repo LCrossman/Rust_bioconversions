@@ -10,6 +10,9 @@ Both scripts need the input file to have proper genbank or embl headers.
 
 Approximately 10 x faster than biopython tool for the same task!
 
+
+Usage: prints the output to stdout
+
 Required crates:
 use std::io;
 use std::fs;
