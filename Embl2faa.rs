@@ -99,7 +99,7 @@ where
 			self.line_buffer.clear();
 			}
 	    if self.line_buffer.starts_with("FT   CDS") {
-	        let re = Regex::new(r"([0-9]+)..([0-9]+)").unwrap();
+	        let re = Regex::new(r"([0-9]+)[[:punct:]]+([0-9]+)").unwrap();
 		let location = re.captures(&self.line_buffer).unwrap();
 		let start = &location[1];
 		let end = &location[2];
