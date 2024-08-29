@@ -82,18 +82,23 @@ where
 	        return Ok(());
 	        }
             }
-	'outer: while !self.line_buffer.is_empty() {
-	    if self.line_buffer.starts_with("LOCUS") {
+	while !self.line_buffer.is_empty() {
+	    if self.line_buffer.starts_with("ID") {
 			record.rec_clear();
-	            	let mut header_fields: Vec<&str> = self.line_buffer.split_whitespace().collect();
+	            	let mut header_fields: Vec<&str> = self.line_buffer.split(";").collect();
 	                let mut header_iter = header_fields.iter();
-	                header_iter.next();
-	                record.id = header_iter.next().map(|s| s.to_string()).unwrap();
+	                let mut id = header_iter.next().map(|s| s.to_string()).unwrap();
+                        let mut rid: Vec<&str> = id.split_whitespace().collect();
+                        record.id = rid[1].trim().to_string();
+	                for _i in 0..5 {
+			   header_iter.next();
+			   }
 	                let lens = header_iter.next().map(|s| s.to_string()).unwrap();
-	                record.length = lens.trim().parse::<u32>().unwrap();
+			let ll: Vec<&str> = lens.split_whitespace().collect();
+	                record.length = ll[0].trim().parse::<u32>().unwrap();
 			self.line_buffer.clear();
 			}
-	    if self.line_buffer.starts_with("     CDS") {
+	    if self.line_buffer.starts_with("FT   CDS") {
 	        let re = Regex::new(r"([0-9]+)[[:punct:]]+([0-9]+)").unwrap();
 		let location = re.captures(&self.line_buffer).unwrap();
 		let start = &location[1];
@@ -102,30 +107,15 @@ where
 		let thestart = start.trim().parse::<u32>().unwrap();
 		let thestart = thestart - 1;
 		let theend = end.trim().parse::<u32>().unwrap();
-                let mut locus_tag = String::new();
-                let mut codon_start: u8 = 1;
-		loop {
+		while !self.line_buffer.contains("locus_tag") {
 		        self.line_buffer.clear();
 			self.reader.read_line(&mut self.line_buffer)?;
-                        if self.line_buffer.contains("/locus_tag") {
-                            let loctag: Vec<&str> = self.line_buffer.split('\"').collect();
-                            locus_tag = loctag[1].to_string();
-                            }
-                        if self.line_buffer.contains("/codon_start") {
-                            let codstart: Vec<&str> = self.line_buffer.split('=').collect();
-                            let valstart = codstart[1].trim().parse::<u8>().unwrap();
-                            codon_start = valstart;
-                            }
-			if self.line_buffer.starts_with("     CDS") {
-			    cds.insert(locus_tag, (thestart, theend, strand, codon_start));
-                            continue 'outer;
-			    }
-			if self.line_buffer.starts_with("ORIGIN") {
-			    continue 'outer;
 			}
-		   }
+	        let loctag: Vec<&str> = self.line_buffer.split('\"').collect();
+		let locus_tag = loctag[1].to_string();
+                cds.insert(locus_tag, (thestart, theend, strand));
                 }
-	    if self.line_buffer.starts_with("ORIGIN") {
+	    if self.line_buffer.starts_with("SQ") {
 	        let mut sequences = String::new();
 	        let result_seq = loop {  
 		     self.line_buffer.clear();
@@ -133,8 +123,8 @@ where
                      if self.line_buffer.starts_with("//") {
 		         break sequences;
                      } else {
-	                 let s: Vec<&str> = self.line_buffer.split_whitespace().collect();
-		         let s = &s[1..];
+	                 let mut s: Vec<&str> = self.line_buffer.split_whitespace().collect();
+			 s.pop();
 		         let sequence = s.iter().join("");
 		         sequences.push_str(&sequence);
                          }     
@@ -146,33 +136,20 @@ where
 	 self.reader.read_line(&mut self.line_buffer)?;
         }
 	for (key,val) in cds.iter() {
-              let (a,b,c,d) = val;    
+              let (a,b,c) = val;    
 	      let sta = *a as usize;
 	      let sto = *b as usize;
-	      let cod = *d as usize - 1;
-	      let mut sliced_sequence: &str = "";
 	      if *c == -1 {
-	          if cod > 1 {
-		     sliced_sequence = &record.sequence[sta+cod..sto];
-		     }
-		  else {
-	             sliced_sequence = &record.sequence[sta..sto];
-		     }
+	          let mut sliced_sequence = &record.sequence[sta..sto];
 	          let cds_char = sliced_sequence.as_bytes();
+		  //str::from_utf8(&revcomp(cds_char)).unwrap());
 		  let prot_seq =  translate(&revcomp(cds_char));
-		  let parts: Vec<&str> = prot_seq.split('*').collect();
-	          println!(">{}\n{}", key,parts[0]);
+	          println!(">{}\n{}", key,prot_seq);
 	      } else {
-	          if cod > 1 {
-		      sliced_sequence = &record.sequence[sta+cod..sto];
-		      }
-		  else {
-		      sliced_sequence = &record.sequence[sta..sto];
-		      }
+	          let mut sliced_sequence = &record.sequence[sta..sto];
 		  let cds_char = sliced_sequence.as_bytes();
 		  let prot_seq = translate(cds_char);
-		  let parts: Vec<&str> = prot_seq.split('*').collect();
-                  println!(">{}\n{}", key, parts[0]);
+                  println!(">{}\n{}", key, prot_seq);
                   }
 	      }
         Ok(())

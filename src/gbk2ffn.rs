@@ -6,7 +6,6 @@ use itertools::Itertools;
 use std::vec::Vec;
 use std::str;
 use std::convert::AsRef;
-use protein_translate::translate;
 use std::path::Path;
 use std::process;
 use bio::alphabets::dna::revcomp;
@@ -82,7 +81,7 @@ where
 	        return Ok(());
 	        }
             }
-	'outer: while !self.line_buffer.is_empty() {
+	while !self.line_buffer.is_empty() {
 	    if self.line_buffer.starts_with("LOCUS") {
 			record.rec_clear();
 	            	let mut header_fields: Vec<&str> = self.line_buffer.split_whitespace().collect();
@@ -94,7 +93,7 @@ where
 			self.line_buffer.clear();
 			}
 	    if self.line_buffer.starts_with("     CDS") {
-	        let re = Regex::new(r"([0-9]+)[[:punct:]]+([0-9]+)").unwrap();
+	        let re = Regex::new(r"([0-9]+)..([0-9]+)").unwrap();
 		let location = re.captures(&self.line_buffer).unwrap();
 		let start = &location[1];
 		let end = &location[2];
@@ -102,28 +101,13 @@ where
 		let thestart = start.trim().parse::<u32>().unwrap();
 		let thestart = thestart - 1;
 		let theend = end.trim().parse::<u32>().unwrap();
-                let mut locus_tag = String::new();
-                let mut codon_start: u8 = 1;
-		loop {
+		while !self.line_buffer.contains("locus_tag") {
 		        self.line_buffer.clear();
 			self.reader.read_line(&mut self.line_buffer)?;
-                        if self.line_buffer.contains("/locus_tag") {
-                            let loctag: Vec<&str> = self.line_buffer.split('\"').collect();
-                            locus_tag = loctag[1].to_string();
-                            }
-                        if self.line_buffer.contains("/codon_start") {
-                            let codstart: Vec<&str> = self.line_buffer.split('=').collect();
-                            let valstart = codstart[1].trim().parse::<u8>().unwrap();
-                            codon_start = valstart;
-                            }
-			if self.line_buffer.starts_with("     CDS") {
-			    cds.insert(locus_tag, (thestart, theend, strand, codon_start));
-                            continue 'outer;
-			    }
-			if self.line_buffer.starts_with("ORIGIN") {
-			    continue 'outer;
 			}
-		   }
+	        let loctag: Vec<&str> = self.line_buffer.split('\"').collect();
+		let locus_tag = loctag[1].to_string();
+                cds.insert(locus_tag, (thestart, theend, strand));
                 }
 	    if self.line_buffer.starts_with("ORIGIN") {
 	        let mut sequences = String::new();
@@ -146,33 +130,16 @@ where
 	 self.reader.read_line(&mut self.line_buffer)?;
         }
 	for (key,val) in cds.iter() {
-              let (a,b,c,d) = val;    
+              let (a,b,c) = val;    
 	      let sta = *a as usize;
 	      let sto = *b as usize;
-	      let cod = *d as usize - 1;
-	      let mut sliced_sequence: &str = "";
 	      if *c == -1 {
-	          if cod > 1 {
-		     sliced_sequence = &record.sequence[sta+cod..sto];
-		     }
-		  else {
-	             sliced_sequence = &record.sequence[sta..sto];
-		     }
+	          let mut sliced_sequence = &record.sequence[sta..sto];
 	          let cds_char = sliced_sequence.as_bytes();
-		  let prot_seq =  translate(&revcomp(cds_char));
-		  let parts: Vec<&str> = prot_seq.split('*').collect();
-	          println!(">{}\n{}", key,parts[0]);
+	          println!(">{}\n{}", key, str::from_utf8(&revcomp(cds_char)).unwrap());
 	      } else {
-	          if cod > 1 {
-		      sliced_sequence = &record.sequence[sta+cod..sto];
-		      }
-		  else {
-		      sliced_sequence = &record.sequence[sta..sto];
-		      }
-		  let cds_char = sliced_sequence.as_bytes();
-		  let prot_seq = translate(cds_char);
-		  let parts: Vec<&str> = prot_seq.split('*').collect();
-                  println!(">{}\n{}", key, parts[0]);
+	          let mut sliced_sequence = &record.sequence[sta..sto];
+                  println!(">{}\n{}", key, &record.sequence[sta..sto]);
                   }
 	      }
         Ok(())
@@ -305,6 +272,18 @@ fn main() -> io::Result<()> {
     let mut reader = Reader::new(file_gbk);
     for result in reader.records() {
         let record = result.expect("err");
+//	println!("this is record {:?}", record);
+//	let sta = record.start as usize;
+//	let sto = record.end as usize;
+//	if record.strand == -1 {
+//	    let mut sliced_sequence = &record.sequence[sta..sto];
+//	    let cds_char = sliced_sequence.as_bytes();
+//	    println!("{}", sliced_sequence);
+//	    println!("{}", str::from_utf8(&revcomp(cds_char)).unwrap());
+//	} else {
+//	    let mut sliced_sequence = &record.sequence[sta..sto];
+//	}
+//	println!("{:?}\n{}_{:?}\n{}", record.start, record.id, record.length, &record.sequence);
     } 
     Ok(())
 }

@@ -1,16 +1,11 @@
 use std::io;
 use std::fs;
 use std::env;
-use regex::Regex;
 use itertools::Itertools;
 use std::vec::Vec;
-use std::str;
 use std::convert::AsRef;
-use protein_translate::translate;
 use std::path::Path;
 use std::process;
-use bio::alphabets::dna::revcomp;
-use std::collections::BTreeMap;
 use anyhow::Context;
 
 
@@ -75,57 +70,30 @@ where
     fn read(& mut self, record: &mut Record) -> io::Result<()> {
         record.rec_clear();
 	let mut sequences = String::new();
-	let mut cds = BTreeMap::new();
     	if self.line_buffer.is_empty() {
 	    self.reader.read_line(&mut self.line_buffer)?;
 	    if self.line_buffer.is_empty() {
 	        return Ok(());
 	        }
             }
-	'outer: while !self.line_buffer.is_empty() {
-	    if self.line_buffer.starts_with("LOCUS") {
+	while !self.line_buffer.is_empty() {
+	    if self.line_buffer.starts_with("ID") {
 			record.rec_clear();
-	            	let mut header_fields: Vec<&str> = self.line_buffer.split_whitespace().collect();
+	            	let mut header_fields: Vec<&str> = self.line_buffer.split(";").collect();
 	                let mut header_iter = header_fields.iter();
-	                header_iter.next();
-	                record.id = header_iter.next().map(|s| s.to_string()).unwrap();
+			let mut id = header_iter.next().map(|s| s.to_string()).unwrap();
+			let mut rid: Vec<&str> = id.split_whitespace().collect();
+			record.id = rid[1].trim().to_string();
+		//	record.id = header_iter.next().map(|s| s.to_string()).unwrap();
+			for _i in 0..5 {
+	                    header_iter.next();
+			}
 	                let lens = header_iter.next().map(|s| s.to_string()).unwrap();
-	                record.length = lens.trim().parse::<u32>().unwrap();
+			let ll: Vec<&str> = lens.split_whitespace().collect();
+	                record.length = ll[0].trim().parse::<u32>().unwrap();
 			self.line_buffer.clear();
 			}
-	    if self.line_buffer.starts_with("     CDS") {
-	        let re = Regex::new(r"([0-9]+)[[:punct:]]+([0-9]+)").unwrap();
-		let location = re.captures(&self.line_buffer).unwrap();
-		let start = &location[1];
-		let end = &location[2];
-		let strand: i32 = if self.line_buffer.contains("complement") {-1} else {1};
-		let thestart = start.trim().parse::<u32>().unwrap();
-		let thestart = thestart - 1;
-		let theend = end.trim().parse::<u32>().unwrap();
-                let mut locus_tag = String::new();
-                let mut codon_start: u8 = 1;
-		loop {
-		        self.line_buffer.clear();
-			self.reader.read_line(&mut self.line_buffer)?;
-                        if self.line_buffer.contains("/locus_tag") {
-                            let loctag: Vec<&str> = self.line_buffer.split('\"').collect();
-                            locus_tag = loctag[1].to_string();
-                            }
-                        if self.line_buffer.contains("/codon_start") {
-                            let codstart: Vec<&str> = self.line_buffer.split('=').collect();
-                            let valstart = codstart[1].trim().parse::<u8>().unwrap();
-                            codon_start = valstart;
-                            }
-			if self.line_buffer.starts_with("     CDS") {
-			    cds.insert(locus_tag, (thestart, theend, strand, codon_start));
-                            continue 'outer;
-			    }
-			if self.line_buffer.starts_with("ORIGIN") {
-			    continue 'outer;
-			}
-		   }
-                }
-	    if self.line_buffer.starts_with("ORIGIN") {
+	    if self.line_buffer.starts_with("SQ") {
 	        let mut sequences = String::new();
 	        let result_seq = loop {  
 		     self.line_buffer.clear();
@@ -133,8 +101,8 @@ where
                      if self.line_buffer.starts_with("//") {
 		         break sequences;
                      } else {
-	                 let s: Vec<&str> = self.line_buffer.split_whitespace().collect();
-		         let s = &s[1..];
+	                 let mut s: Vec<&str> = self.line_buffer.split_whitespace().collect();
+		         s.pop();
 		         let sequence = s.iter().join("");
 		         sequences.push_str(&sequence);
                          }     
@@ -144,51 +112,18 @@ where
                 }
 	 self.line_buffer.clear();
 	 self.reader.read_line(&mut self.line_buffer)?;
-        }
-	for (key,val) in cds.iter() {
-              let (a,b,c,d) = val;    
-	      let sta = *a as usize;
-	      let sto = *b as usize;
-	      let cod = *d as usize - 1;
-	      let mut sliced_sequence: &str = "";
-	      if *c == -1 {
-	          if cod > 1 {
-		     sliced_sequence = &record.sequence[sta+cod..sto];
-		     }
-		  else {
-	             sliced_sequence = &record.sequence[sta..sto];
-		     }
-	          let cds_char = sliced_sequence.as_bytes();
-		  let prot_seq =  translate(&revcomp(cds_char));
-		  let parts: Vec<&str> = prot_seq.split('*').collect();
-	          println!(">{}\n{}", key,parts[0]);
-	      } else {
-	          if cod > 1 {
-		      sliced_sequence = &record.sequence[sta+cod..sto];
-		      }
-		  else {
-		      sliced_sequence = &record.sequence[sta..sto];
-		      }
-		  let cds_char = sliced_sequence.as_bytes();
-		  let prot_seq = translate(cds_char);
-		  let parts: Vec<&str> = prot_seq.split('*').collect();
-                  println!(">{}\n{}", key, parts[0]);
-                  }
-	      }
-        Ok(())
+	 }
+         Ok(())
      }
 }
+
 
 
 #[derive(Default, Clone, Debug)]
 pub struct Record {
     id: String,
     length: u32,
-    sequence: String,
-    start: u32,
-    end: u32,
-    strand: i32,
-    locus_tag: String,
+    sequence: String
 }
 
 
@@ -198,11 +133,7 @@ impl Record {
         Record {
             id: "".to_owned(),
             length: 0,
-            sequence: "".to_owned(),
-	    start: 0,
-	    end: 0,
-	    strand: 0,
-	    locus_tag: "".to_owned(),
+            sequence: "".to_owned()
         }
     }
     pub fn is_empty(&mut self) -> bool {
@@ -215,37 +146,20 @@ impl Record {
         Ok(())
     }
     pub fn id(&mut self) -> &str {
-        &self.id
+        self.id.as_ref()
     }
     pub fn length(&mut self) -> u32 {
         self.length
     }   
     pub fn sequence(&mut self) -> &str {
-        &self.sequence
-    }
-    pub fn start(&mut self) -> u32 {
-        self.start
-    }
-    pub fn end(&mut self) -> u32 {
-        self.end
-    }
-    pub fn strand(&mut self) -> i32 {
-        self.strand
-    }
-    pub fn locus_tag(&mut self) -> &str {
-        &self.locus_tag
+        self.sequence.as_ref()
     }
     fn rec_clear(&mut self) {
         self.id.clear();
-	self.length = 0;
-	self.sequence.clear();
-	self.start = 0;
-	self.end = 0;
-	self.strand = 0;
-	self.locus_tag.clear();
+        self.length = 0;
+        self.sequence.clear();
     }
 }
-
 
 /// An iterator over the records of a Fasta file.
 pub struct Records<B>
@@ -305,6 +219,7 @@ fn main() -> io::Result<()> {
     let mut reader = Reader::new(file_gbk);
     for result in reader.records() {
         let record = result.expect("err");
+	println!(">{}_{:?}\n{}", record.id, record.length, record.sequence);
     } 
     Ok(())
 }
